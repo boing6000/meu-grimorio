@@ -15,6 +15,20 @@ export const getBasePromptPlain = (story: any) => {
         `- Role-playing: Use the 'writer' role to write a role-play based on the provided information and user instructions.\n` +
         `- Use the '<|start_header_id|>writer character <character_name><|end_header_id|>' role for dialog or when acting as a specific character.\n` +
         `- Use the '<|start_header_id|>writer narrative<|end_header_id|>' role for narration.\n` +
+        `- Every output must start with a single header that clearly identifies who is speaking: either a character header or the narrative header.\n` +
+        `- If multiple speakers are needed, split them into separate blocks, each with its own header and content.\n` +
+        `- Do not omit headers, and never output dialogue without a header.\n\n` +
+        `Example (single speaker):\n` +
+        `<|start_header_id|>writer character Lina<|end_header_id|>\n` +
+        `Lina: We should move now.\n\n` +
+        `Example (narration):\n` +
+        `<|start_header_id|>writer narrative<|end_header_id|>\n` +
+        `The docks fall silent as the fog rolls in.\n\n` +
+        `Example (multiple speakers):\n` +
+        `<|start_header_id|>writer character Lina<|end_header_id|>\n` +
+        `Lina: We should move now.\n` +
+        `<|start_header_id|>writer character Marco<|end_header_id|>\n` +
+        `Marco: Agreed.\n\n` +
         `- Other: Use the 'assistant' role for any other tasks the user may request.\n\n` +
         `# Role-Play Information\n\n` +
         `## Plot\n${story.plot_prompt}\n\n` +
