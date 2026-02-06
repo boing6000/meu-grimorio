@@ -248,9 +248,8 @@ export default defineEventHandler(async (event) => {
             }
         } else {
             // FALLBACK
-            const fallbackName = (body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name)
-                ? body.npc_name
-                : 'Narrative';
+            const isNpcTarget = body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name;
+            const fallbackName = isNpcTarget ? body.npc_name : 'Narrative';
 
             newMessages.push({
                 role: 'writer',
