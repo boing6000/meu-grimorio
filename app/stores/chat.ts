@@ -9,6 +9,7 @@ export const useChatStore = defineStore('chat', () => {
     const loading = ref(false)
     const sending = ref(false)
     const tokens = ref(0)
+    const promptProcessingMode = ref<'none' | 'merge' | 'strict'>('none')
     let abortController: AbortController | null = null;
 
     // --- GETTERS (Computed) ---
@@ -78,7 +79,8 @@ export const useChatStore = defineStore('chat', () => {
                 body: {
                     role,
                     content,
-                    npc_name: npcName
+                    npc_name: npcName,
+                    custom_prompt_post_processing: promptProcessingMode.value
                 }
             })
 
@@ -204,7 +206,12 @@ export const useChatStore = defineStore('chat', () => {
             abortController = new AbortController(); // Criamos um novo controlador
             const response = await $fetch(`/api/stories/chat/${storyId}`, {
                 method: 'POST',
-                body: { content, npc_name: npcName, is_retry: true } // is_retry avisa o server para não duplicar
+                body: {
+                    content,
+                    npc_name: npcName,
+                    is_retry: true,
+                    custom_prompt_post_processing: promptProcessingMode.value
+                } // is_retry avisa o server para não duplicar
             });
 
             tokens.value = response.stats.prompt_tokens || 0
@@ -228,6 +235,7 @@ export const useChatStore = defineStore('chat', () => {
         loading,
         sending,
         tokens,
+        promptProcessingMode,
         // Getters
         npcOptions,
         currentStoryId,
