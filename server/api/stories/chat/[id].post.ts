@@ -219,54 +219,62 @@ export default defineEventHandler(async (event) => {
             }
         });
 
-// 3. Fragmentação por "Nomes no Topo" ou "Nomes com Dois Pontos"
-        const segments = cleanContent.split(/(?:\n|^)([A-Z][\w\s]+)(?::|\n+)(?=[^a-z\n])/gm);
+        const isNpcTarget = body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name;
 
-        if (segments.length > 1) {
-            if (segments[0].trim()) {
-                newMessages.push({
-                    role: 'writer',
-                    name: 'Narrative',
-                    content: segments[0].trim(),
-                    created_at: new Date().toISOString()
-                });
-            }
-
-            for (let i = 1; i < segments.length; i += 2) {
-                let name = segments[i].trim();
-                let content = segments[i + 1] ? segments[i + 1].trim() : '';
-
-                if (!content) continue;
-
-                // Proteção contra frases de narração longas sendo confundidas com nomes
-                if (name.split(' ').length > 3) {
-                    newMessages.push({
-                        role: 'writer',
-                        name: 'Narrative',
-                        content: `${name}\n${content}`,
-                        created_at: new Date().toISOString()
-                    });
-                    continue;
-                }
-
-                newMessages.push({
-                    role: 'writer',
-                    name: /^(Narrator|Narrative|Narrador|system)$/i.test(name) ? 'Narrative' : name,
-                    content: content,
-                    created_at: new Date().toISOString()
-                });
-            }
-        } else {
-            // FALLBACK
-            const isNpcTarget = body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name;
-            const fallbackName = isNpcTarget ? body.npc_name : 'Narrative';
-
+        if (isNpcTarget) {
             newMessages.push({
                 role: 'writer',
-                name: fallbackName,
+                name: body.npc_name,
                 content: cleanContent,
                 created_at: new Date().toISOString()
             });
+        } else {
+            // 3. Fragmentação por "Nomes no Topo" ou "Nomes com Dois Pontos"
+            const segments = cleanContent.split(/(?:\n|^)([A-Z][\w\s]+)(?::|\n+)(?=[^a-z\n])/gm);
+
+            if (segments.length > 1) {
+                if (segments[0].trim()) {
+                    newMessages.push({
+                        role: 'writer',
+                        name: 'Narrative',
+                        content: segments[0].trim(),
+                        created_at: new Date().toISOString()
+                    });
+                }
+
+                for (let i = 1; i < segments.length; i += 2) {
+                    let name = segments[i].trim();
+                    let content = segments[i + 1] ? segments[i + 1].trim() : '';
+
+                    if (!content) continue;
+
+                    // Proteção contra frases de narração longas sendo confundidas com nomes
+                    if (name.split(' ').length > 3) {
+                        newMessages.push({
+                            role: 'writer',
+                            name: 'Narrative',
+                            content: `${name}\n${content}`,
+                            created_at: new Date().toISOString()
+                        });
+                        continue;
+                    }
+
+                    newMessages.push({
+                        role: 'writer',
+                        name: /^(Narrator|Narrative|Narrador|system)$/i.test(name) ? 'Narrative' : name,
+                        content: content,
+                        created_at: new Date().toISOString()
+                    });
+                }
+            } else {
+                // FALLBACK
+                newMessages.push({
+                    role: 'writer',
+                    name: 'Narrative',
+                    content: cleanContent,
+                    created_at: new Date().toISOString()
+                });
+            }
         }
 
         messages.push(...newMessages);
