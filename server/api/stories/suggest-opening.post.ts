@@ -1,6 +1,6 @@
 // server/api/stories/suggest-opening.post.ts
 
-import {getBasePrompt, parsePrompt} from "~~/server/utils";
+import { getBasePrompt, parsePrompt, koboldChat, koboldGenerate, buildChatMessages, shouldUseChatCompletions } from "~~/server/utils";
 
 export default defineEventHandler(async (event) => {
     const body = await readBody(event);
@@ -28,23 +28,31 @@ export default defineEventHandler(async (event) => {
         characters: processedCharacters
     };
 
-    let promptParaIA = getBasePrompt(fullStory)
-    promptParaIA += `<|start_header_id|>assistant<|end_header_id|>\n\n`
-
     try {
-        // Aqui invocamos o oráculo (ajuste a URL para o seu Kobold ou OpenAI)
-        const response: any = await $fetch('http://localhost:5001/api/v1/generate', {
-            method: 'POST',
-            body: {
+        let aiText = '';
+        if (shouldUseChatCompletions()) {
+            const messages = buildChatMessages(fullStory, [], undefined);
+            const response: any = await koboldChat({
+                model: process.env.KOBOLDCPP_MODEL || 'lucid-v1-nemo',
+                messages,
+                max_tokens: 400,
+                temperature: 0.8,
+                stop: ["[SYSTEM]", "###"]
+            });
+            aiText = response.choices?.[0]?.message?.content?.trim() || '';
+        } else {
+            let promptParaIA = getBasePrompt(fullStory);
+            promptParaIA += `<|start_header_id|>assistant<|end_header_id|>\n\n`;
+
+            const response: any = await koboldGenerate({
                 prompt: promptParaIA,
                 max_context_length: 2048,
                 max_length: 400,
                 temperature: 0.8,
                 stop_sequence: ["[SYSTEM]", "###"]
-            }
-        });
-
-        const aiText = response.results[0].text.trim();
+            });
+            aiText = response.results?.[0]?.text?.trim() || '';
+        }
 
         // 3. Transformar o texto bruto no array que o front-end espera
         const lines = aiText.split('\n').filter(l => l.includes(':'));

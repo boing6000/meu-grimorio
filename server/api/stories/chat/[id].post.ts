@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { buildChatMessages, koboldChat, koboldGenerate, shouldUseChatCompletions, getBasePrompt } from '~~/server/utils';
 
 export default defineEventHandler(async (event) => {
     const id = getRouterParam(event, 'id') as string;
@@ -28,6 +29,7 @@ export default defineEventHandler(async (event) => {
             messages.push(newUserMsg);
         }
 
+        const useChatCompletions = shouldUseChatCompletions();
         // --- 2. CONSTRUÇÃO DO PROMPT (ESTILO LUCID NATIVE) ---
         let prompt = getBasePrompt(story);
 
@@ -71,12 +73,28 @@ export default defineEventHandler(async (event) => {
             let summaryBase = messages.map((m: any) => `${m.name}: ${m.content}`).join('\n');
             const summaryPrompt = `${prompt}\n<|start_header_id|>user<|end_header_id|>\n\nSummarize the story so far into a single dense paragraph. Preserve current character locations and goals.<|eot_id|>\n<|start_header_id|>assistant<|end_header_id|>\n\n`;
 
-            const summaryRaw: any = await $fetch('http://localhost:5001/api/v1/generate', {
-                method: 'POST',
-                body: { prompt: summaryPrompt, max_length: 500, temperature: 0.3 }
-            });
-
-            const newSummary = summaryRaw.results[0].text.trim();
+            let newSummary = '';
+            if (useChatCompletions) {
+                const summaryMessages = buildChatMessages(story, messages, chatIndex.summary);
+                summaryMessages.push({
+                    role: 'user',
+                    content: 'Summarize the story so far into a single dense paragraph. Preserve current character locations and goals.'
+                });
+                const summaryRaw: any = await koboldChat({
+                    model: process.env.KOBOLDCPP_MODEL || 'lucid-v1-nemo',
+                    messages: summaryMessages,
+                    max_tokens: 500,
+                    temperature: 0.3
+                });
+                newSummary = summaryRaw.choices?.[0]?.message?.content?.trim() || '';
+            } else {
+                const summaryRaw: any = await koboldGenerate({
+                    prompt: summaryPrompt,
+                    max_length: 500,
+                    temperature: 0.3
+                });
+                newSummary = summaryRaw.results?.[0]?.text?.trim() || '';
+            }
             chatIndex.summary = (chatIndex.summary ? chatIndex.summary + "\n" : "") + newSummary;
             chatIndex.current_chunk += 1;
 
@@ -101,9 +119,19 @@ export default defineEventHandler(async (event) => {
             '<|start_header_id|>user<|end_header_id|>'
         ];
 
-        const aiRawResponse: any = await $fetch('http://localhost:5001/api/v1/generate', {
-            method: 'POST',
-            body: {
+        let aiRawResponse: any;
+        if (useChatCompletions) {
+            const chatMessages = buildChatMessages(story, messages, chatIndex.summary, body.npc_name);
+            aiRawResponse = await koboldChat({
+                model: process.env.KOBOLDCPP_MODEL || 'lucid-v1-nemo',
+                messages: chatMessages,
+                max_tokens: 300,
+                temperature: 0.8,
+                top_p: 1,
+                stop: stopSequences
+            });
+        } else {
+            aiRawResponse = await koboldGenerate({
                 prompt: prompt,
                 max_context_length: limit,
                 max_length: 300, // Equivale ao n_predict do Silly
@@ -136,19 +164,23 @@ export default defineEventHandler(async (event) => {
                 // --- OUTROS ---
                 stream: false,     // Por enquanto, mantemos falso para processar o JSON
                 bypass_eos: false
-            }
-        });
+            });
+        }
 
         // Atualização de Stats real (Usage do Kobold)
-        const result = aiRawResponse.results[0];
+        const result = useChatCompletions ? aiRawResponse.choices?.[0] : aiRawResponse.results?.[0];
         chatIndex.stats = {
             ...chatIndex.stats,
             prompt_tokens: result?.prompt_tokens || 0,
             completion_tokens: result?.completion_tokens || 0,
-            last_total_tokens: result?.prompt_tokens - result?.completion_tokens|| 0
+            last_total_tokens: result?.prompt_tokens - result?.completion_tokens || 0
         };
-
-        let aiContent = result.text.trim();
+        let aiContent = '';
+        if (useChatCompletions) {
+            aiContent = result?.message?.content?.trim() || '';
+        } else {
+            aiContent = result?.text?.trim() || '';
+        }
 
         // --- 6. FRAGMENTAÇÃO E SALVAMENTO (COM EXPURGO DE STOPS) ---
         const newMessages: any[] = [];
@@ -216,9 +248,8 @@ export default defineEventHandler(async (event) => {
             }
         } else {
             // FALLBACK
-            const fallbackName = (body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name)
-                ? body.npc_name
-                : 'Narrative';
+            const isNpcTarget = body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name;
+            const fallbackName = isNpcTarget ? body.npc_name : 'Narrative';
 
             newMessages.push({
                 role: 'writer',
