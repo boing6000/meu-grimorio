@@ -36,7 +36,10 @@ export const buildChatMessages = (story: any, messages: any[], summary: string |
   });
 
   if (npcName && npcName !== 'Narrative' && npcName !== story.persona.name) {
-    chatMessages.push({ role: 'system', content: `Respond as ${npcName} and stay in character.` });
+    chatMessages.push({
+      role: 'system',
+      content: `Respond as ${npcName} and stay in character. Format the reply as "${npcName}: <dialog or narration>" without extra labels.`
+    });
   }
 
   return [{ role: 'system', content: systemParts.join('\n\n') }, ...chatMessages];
