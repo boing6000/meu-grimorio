@@ -220,6 +220,12 @@ export default defineEventHandler(async (event) => {
         });
 
         const isNpcTarget = body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name;
+        const defaultNpcName = story.characters?.[0]?.name;
+        const fallbackResponseName = body.npc_name === 'Narrative'
+            ? 'Narrative'
+            : body.npc_name === story.persona.name
+                ? (defaultNpcName || 'Narrative')
+                : body.npc_name;
 
         if (isNpcTarget) {
             newMessages.push({
@@ -259,9 +265,13 @@ export default defineEventHandler(async (event) => {
                         continue;
                     }
 
+                    const resolvedName = /^(Narrator|Narrative|Narrador|system)$/i.test(name)
+                        ? fallbackResponseName
+                        : name;
+
                     newMessages.push({
                         role: 'writer',
-                        name: /^(Narrator|Narrative|Narrador|system)$/i.test(name) ? 'Narrative' : name,
+                        name: resolvedName,
                         content: content,
                         created_at: new Date().toISOString()
                     });
@@ -270,7 +280,7 @@ export default defineEventHandler(async (event) => {
                 // FALLBACK
                 newMessages.push({
                     role: 'writer',
-                    name: 'Narrative',
+                    name: fallbackResponseName,
                     content: cleanContent,
                     created_at: new Date().toISOString()
                 });
