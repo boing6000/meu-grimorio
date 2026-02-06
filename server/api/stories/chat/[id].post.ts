@@ -224,7 +224,7 @@ export default defineEventHandler(async (event) => {
         const fallbackResponseName = body.npc_name === 'Narrative'
             ? 'Narrative'
             : body.npc_name === story.persona.name
-                ? (defaultNpcName || 'Narrative')
+                ? 'Narrative'
                 : body.npc_name;
 
         if (isNpcTarget) {
@@ -266,7 +266,7 @@ export default defineEventHandler(async (event) => {
                     }
 
                     const resolvedName = /^(Narrator|Narrative|Narrador|system)$/i.test(name)
-                        ? fallbackResponseName
+                        ? 'Narrative'
                         : name;
 
                     newMessages.push({
