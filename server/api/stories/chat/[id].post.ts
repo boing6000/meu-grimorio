@@ -1,6 +1,14 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { buildChatMessages, koboldChat, koboldGenerate, shouldUseChatCompletions, getBasePrompt } from '~~/server/utils';
+import {
+    buildChatMessages,
+    koboldChat,
+    koboldGenerate,
+    shouldUseChatCompletions,
+    getBasePrompt,
+    postProcessPrompt,
+    PROMPT_PROCESSING_TYPE
+} from '~~/server/utils';
 
 export default defineEventHandler(async (event) => {
     const id = getRouterParam(event, 'id') as string;
@@ -30,6 +38,8 @@ export default defineEventHandler(async (event) => {
         }
 
         const useChatCompletions = shouldUseChatCompletions();
+        const promptProcessingType = body.custom_prompt_post_processing ?? PROMPT_PROCESSING_TYPE.NONE;
+        const processedMessages = postProcessPrompt(messages, promptProcessingType);
         // --- 2. CONSTRUÇÃO DO PROMPT (ESTILO LUCID NATIVE) ---
         let prompt = getBasePrompt(story);
 
@@ -38,7 +48,7 @@ export default defineEventHandler(async (event) => {
         }
 
         // Mapeamos as mensagens usando os headers nativos da Lucid
-        messages.forEach((msg: any) => {
+        processedMessages.forEach((msg: any) => {
             const isNarrative = msg.name === 'Narrative';
             const header = isNarrative
                 ? '<|start_header_id|>writer narrative<|end_header_id|>'
@@ -70,12 +80,12 @@ export default defineEventHandler(async (event) => {
 
         if (lastTokens >= trigger) {
             // RITUAL DE RESUMO USANDO O FORMATO LUCID
-            let summaryBase = messages.map((m: any) => `${m.name}: ${m.content}`).join('\n');
+            let summaryBase = processedMessages.map((m: any) => `${m.name}: ${m.content}`).join('\n');
             const summaryPrompt = `${prompt}\n<|start_header_id|>user<|end_header_id|>\n\nSummarize the story so far into a single dense paragraph. Preserve current character locations and goals.<|eot_id|>\n<|start_header_id|>assistant<|end_header_id|>\n\n`;
 
             let newSummary = '';
             if (useChatCompletions) {
-                const summaryMessages = buildChatMessages(story, messages, chatIndex.summary);
+                const summaryMessages = buildChatMessages(story, processedMessages, chatIndex.summary);
                 summaryMessages.push({
                     role: 'user',
                     content: 'Summarize the story so far into a single dense paragraph. Preserve current character locations and goals.'
@@ -121,7 +131,7 @@ export default defineEventHandler(async (event) => {
 
         let aiRawResponse: any;
         if (useChatCompletions) {
-            const chatMessages = buildChatMessages(story, messages, chatIndex.summary, body.npc_name);
+            const chatMessages = buildChatMessages(story, processedMessages, chatIndex.summary, body.npc_name);
             aiRawResponse = await koboldChat({
                 model: process.env.KOBOLDCPP_MODEL || 'lucid-v1-nemo',
                 messages: chatMessages,
@@ -209,54 +219,72 @@ export default defineEventHandler(async (event) => {
             }
         });
 
-// 3. Fragmentação por "Nomes no Topo" ou "Nomes com Dois Pontos"
-        const segments = cleanContent.split(/(?:\n|^)([A-Z][\w\s]+)(?::|\n+)(?=[^a-z\n])/gm);
+        const isNpcTarget = body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name;
+        const defaultNpcName = story.characters?.[0]?.name;
+        const fallbackResponseName = body.npc_name === 'Narrative'
+            ? 'Narrative'
+            : body.npc_name === story.persona.name
+                ? 'Narrative'
+                : body.npc_name;
 
-        if (segments.length > 1) {
-            if (segments[0].trim()) {
-                newMessages.push({
-                    role: 'writer',
-                    name: 'Narrative',
-                    content: segments[0].trim(),
-                    created_at: new Date().toISOString()
-                });
-            }
-
-            for (let i = 1; i < segments.length; i += 2) {
-                let name = segments[i].trim();
-                let content = segments[i + 1] ? segments[i + 1].trim() : '';
-
-                if (!content) continue;
-
-                // Proteção contra frases de narração longas sendo confundidas com nomes
-                if (name.split(' ').length > 3) {
-                    newMessages.push({
-                        role: 'writer',
-                        name: 'Narrative',
-                        content: `${name}\n${content}`,
-                        created_at: new Date().toISOString()
-                    });
-                    continue;
-                }
-
-                newMessages.push({
-                    role: 'writer',
-                    name: /^(Narrator|Narrative|Narrador|system)$/i.test(name) ? 'Narrative' : name,
-                    content: content,
-                    created_at: new Date().toISOString()
-                });
-            }
-        } else {
-            // FALLBACK
-            const isNpcTarget = body.npc_name !== 'Narrative' && body.npc_name !== story.persona.name;
-            const fallbackName = isNpcTarget ? body.npc_name : 'Narrative';
-
+        if (isNpcTarget) {
             newMessages.push({
                 role: 'writer',
-                name: fallbackName,
+                name: body.npc_name,
                 content: cleanContent,
                 created_at: new Date().toISOString()
             });
+        } else {
+            // 3. Fragmentação por "Nomes no Topo" ou "Nomes com Dois Pontos"
+            const segments = cleanContent.split(/(?:\n|^)([A-Z][\w\s]+)(?::|\n+)(?=[^a-z\n])/gm);
+
+            if (segments.length > 1) {
+                if (segments[0].trim()) {
+                    newMessages.push({
+                        role: 'writer',
+                        name: 'Narrative',
+                        content: segments[0].trim(),
+                        created_at: new Date().toISOString()
+                    });
+                }
+
+                for (let i = 1; i < segments.length; i += 2) {
+                    let name = segments[i].trim();
+                    let content = segments[i + 1] ? segments[i + 1].trim() : '';
+
+                    if (!content) continue;
+
+                    // Proteção contra frases de narração longas sendo confundidas com nomes
+                    if (name.split(' ').length > 3) {
+                        newMessages.push({
+                            role: 'writer',
+                            name: 'Narrative',
+                            content: `${name}\n${content}`,
+                            created_at: new Date().toISOString()
+                        });
+                        continue;
+                    }
+
+                    const resolvedName = /^(Narrator|Narrative|Narrador|system)$/i.test(name)
+                        ? 'Narrative'
+                        : name;
+
+                    newMessages.push({
+                        role: 'writer',
+                        name: resolvedName,
+                        content: content,
+                        created_at: new Date().toISOString()
+                    });
+                }
+            } else {
+                // FALLBACK
+                newMessages.push({
+                    role: 'writer',
+                    name: fallbackResponseName,
+                    content: cleanContent,
+                    created_at: new Date().toISOString()
+                });
+            }
         }
 
         messages.push(...newMessages);
