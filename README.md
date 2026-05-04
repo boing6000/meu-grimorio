@@ -73,3 +73,23 @@ bun run preview
 ```
 
 Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+
+## Gerador de histórias (Python + Ollama)
+
+Script: `story_generator.py`
+
+### Uso
+
+```bash
+python3 story_generator.py caminho/para/ideia.txt --host http://localhost:11434 --model llama3.1
+```
+
+Também é possível definir o host por variável de ambiente:
+
+```bash
+export OLLAMA_HOST=http://localhost:11434
+python3 story_generator.py caminho/para/ideia.txt --model llama3.1
+```
+
+O fluxo é interativo: estrutura -> revisão -> capítulos -> revisão final de cada capítulo.
+Os capítulos aprovados são salvos em `storias/[titulo]/chapter_[n].md`.
