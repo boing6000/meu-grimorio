@@ -47,6 +47,29 @@ def ask_int(question: str, minimum: int = 1) -> int:
             print(f"Informe um número inteiro maior ou igual a {minimum}.")
 
 
+def safe_generate(
+    client: "OllamaClient",
+    *,
+    prompt: str,
+    temperature: float,
+    stream: bool,
+) -> str:
+    while True:
+        try:
+            return client.generate(
+                prompt,
+                temperature=temperature,
+                stream=stream,
+                on_token=stream_to_console if stream else None,
+            )
+        except RuntimeError as exc:
+            if stream:
+                print()
+            print(f"\nFalha ao gerar conteúdo: {exc}")
+            if not prompt_yes_no("Deseja tentar novamente com o mesmo prompt?"):
+                raise
+
+
 class OllamaClient:
     def __init__(self, host: str, model: str):
         self.host = host.rstrip("/")
@@ -114,7 +137,7 @@ You are a creative writing assistant. Based on the story idea below, provide:
 Base idea:
 {idea_text}
 """.strip()
-    return client.generate(prompt, temperature=0.7, stream=stream, on_token=stream_to_console if stream else None)
+    return safe_generate(client, prompt=prompt, temperature=0.7, stream=stream)
 
 
 def build_chapter_idea(client: OllamaClient, structure: str, chapter_n: int, total: int, stream: bool = False) -> str:
@@ -125,7 +148,7 @@ Include: dramatic goal, conflict, turning point, and ending hook.
 Structure:
 {structure}
 """.strip()
-    return client.generate(prompt, temperature=0.75, stream=stream, on_token=stream_to_console if stream else None)
+    return safe_generate(client, prompt=prompt, temperature=0.75, stream=stream)
 
 
 def write_chapter(client: OllamaClient, structure: str, chapter_plan: str, chapter_n: int, stream: bool = False) -> str:
@@ -139,7 +162,7 @@ Overall structure:
 Chapter plan:
 {chapter_plan}
 """.strip()
-    return client.generate(prompt, temperature=0.85, stream=stream, on_token=stream_to_console if stream else None)
+    return safe_generate(client, prompt=prompt, temperature=0.85, stream=stream)
 
 
 def parse_title_from_structure(structure: str) -> str:
@@ -179,11 +202,11 @@ def main() -> int:
 
     while not prompt_yes_no("Você aprova essa estrutura?"):
         feedback = input("Descreva o que deve mudar na estrutura: ").strip()
-        structure = client.generate(
-            f"Rewrite the structure below considering this feedback: {feedback}\n\nCurrent structure:\n{structure}",
+        structure = safe_generate(
+            client,
+            prompt=f"Rewrite the structure below considering this feedback: {feedback}\n\nCurrent structure:\n{structure}",
             temperature=0.7,
             stream=args.stream,
-            on_token=stream_to_console if args.stream else None,
         )
         print("\nNova estrutura:\n")
         if args.stream:
@@ -207,11 +230,11 @@ def main() -> int:
 
         while not prompt_yes_no("Aceita essa ideia de capítulo?"):
             feedback = input("O que deve mudar na ideia deste capítulo? ").strip()
-            chapter_plan = client.generate(
-                f"Rewrite the chapter {chapter_n} concept considering this feedback: {feedback}\n\nCurrent chapter concept:\n{chapter_plan}",
+            chapter_plan = safe_generate(
+                client,
+                prompt=f"Rewrite the chapter {chapter_n} concept considering this feedback: {feedback}\n\nCurrent chapter concept:\n{chapter_plan}",
                 temperature=0.75,
                 stream=args.stream,
-                on_token=stream_to_console if args.stream else None,
             )
             print("\nNova ideia do capítulo:\n")
             if args.stream:
@@ -228,11 +251,11 @@ def main() -> int:
 
         while not prompt_yes_no("O capítulo está como você quer?"):
             feedback = input("Quais alterações você deseja neste capítulo? ").strip()
-            chapter_text = client.generate(
-                f"Rewrite chapter {chapter_n} considering this feedback: {feedback}\n\nCurrent chapter draft:\n{chapter_text}",
+            chapter_text = safe_generate(
+                client,
+                prompt=f"Rewrite chapter {chapter_n} considering this feedback: {feedback}\n\nCurrent chapter draft:\n{chapter_text}",
                 temperature=0.85,
                 stream=args.stream,
-                on_token=stream_to_console if args.stream else None,
             )
             print("\nCapítulo revisado:\n")
             if args.stream:
